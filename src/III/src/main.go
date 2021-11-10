@@ -17,6 +17,11 @@ func tcpGather(ip string, ports []string) {
 	go func() {
 		for {
 			results := make(map[string]string)
+			ok_ports := []string{}
+			err_ports := []string{}
+			var ok_ports_str string
+			var err_ports_str string
+			var err_msg string
 			log.Printf("ports: %s", ports)
 			for _, port := range ports {
 				address := net.JoinHostPort(ip, port)
@@ -25,46 +30,56 @@ func tcpGather(ip string, ports []string) {
 				log.Printf("conn: %s, err: %s, port: %s", conn, err, port)
 				if err != nil {
 					results[port] = "failed"
-					// err_string, err := json.Marshal(err)
-					if err != nil {
-						log.Printf("err: %s", err)
-					}
-					opsQueued.With(prometheus.Labels{"ok": "nil", "err": port}).Set(1)
+					err_msg = err.Error()
+					err_ports = append(err_ports, port)
 					// todo log handler
 				} else {
 					if conn != nil {
 						results[port] = "success"
 						_ = conn.Close()
-						opsQueued.With(prometheus.Labels{"ok": port, "err": "nil"}).Set(0)
+						ok_ports = append(ok_ports, port)
 					} else {
 						results[port] = "failed"
-						opsQueued.With(prometheus.Labels{"ok": "nil", "err": port}).Set(1)
+						err_ports = append(err_ports, port)
 					}
 				}
 				// log.Printf("opsQueued: %s", opsQueued.Colle)
 			}
+			if len(ok_ports) == 0 {
+				ok_ports_str = "nil"
+			} else {
+				ok_ports_str = strings.Join(ok_ports, ", ")
+			}
+			if len(err_ports) == 0 {
+				err_ports_str = "nil"
+			} else {
+				err_ports_str = strings.Join(err_ports, ", ")
+			}
+			healthPortsCheck.With(prometheus.Labels{"app_name": os.Getenv("APP_NAME"), "ok": ok_ports_str, "err": err_ports_str, "err_msg": err_msg}).Set(1)
 			time.Sleep(3 * time.Second)
 		}
 	}()
 }
 
 var (
-	opsQueued = prometheus.NewGaugeVec(
+	healthPortsCheck = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "klb",
 			Subsystem: "ai_service",
-			Name:      os.Getenv("APP_NAME"),
-			Help:      "检测所有服务端口是否可用，正常值为 0, 异常值为: 1.",
+			Name:      "sidecar",
+			Help:      "检测所有服务端口是否可用，正常端口写入到 ok, 异常端口写入到 err, 错误信息写入到 err_msg.",
 		},
 		[]string{
-			"err",
+			"app_name",
 			"ok",
+			"err",
+			"err_msg",
 		},
 	)
 )
 
 func main() {
-	prometheus.MustRegister(opsQueued)
+	prometheus.MustRegister(healthPortsCheck)
 	ip := "localhost"
 	var ports []string
 	service_ports, ok := os.LookupEnv("SERVICE_PORTS")
