@@ -14,7 +14,7 @@ COPY go.sum .
 RUN go mod download
 
 # 复制源代码
-COPY src/*.go .
+COPY src/*.go ./
 
 # 编译go程序
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o main /app
